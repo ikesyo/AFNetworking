@@ -509,6 +509,16 @@ typedef enum {
  */
 extern NSString * AFQueryStringFromParametersWithEncoding(NSDictionary *parameters, NSStringEncoding encoding);
 
+/**
+ Returns a percent-escaped string, using the specified encoding.
+ 
+ @param string The string which will be percent-escaped.
+ @param encoding The encoding to use in escaping string. If you are uncertain of the correct encoding, you should use UTF-8 (`NSUTF8StringEncoding`), which is the encoding designated by RFC 3986 as the correct encoding for use in URLs.
+ 
+ @return A percent-escaped string
+ */
+extern NSString * AFPercentEscapedQueryStringPairMemberFromStringWithEncoding(NSString *string, NSStringEncoding encoding);
+
 ///--------------------
 /// @name Notifications
 ///--------------------
