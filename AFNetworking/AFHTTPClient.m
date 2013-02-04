@@ -146,10 +146,11 @@ NSArray * AFQueryStringPairsFromKeyAndValue(NSString *key, id value) {
     NSMutableArray *mutableQueryStringComponents = [NSMutableArray array];
 
     if ([value isKindOfClass:[NSDictionary class]]) {
+        NSDictionary *dictionary = value;
         // Sort dictionary keys to ensure consistent ordering in query string, which is important when deserializing potentially ambiguous sequences, such as an array of dictionaries
         NSSortDescriptor *sortDescriptor = [NSSortDescriptor sortDescriptorWithKey:@"description" ascending:YES selector:@selector(caseInsensitiveCompare:)];
-        [[[value allKeys] sortedArrayUsingDescriptors:[NSArray arrayWithObject:sortDescriptor]] enumerateObjectsUsingBlock:^(id nestedKey, __unused NSUInteger idx, __unused BOOL *stop) {
-            id nestedValue = [value objectForKey:nestedKey];
+        [[[dictionary allKeys] sortedArrayUsingDescriptors:[NSArray arrayWithObject:sortDescriptor]] enumerateObjectsUsingBlock:^(id nestedKey, __unused NSUInteger idx, __unused BOOL *stop) {
+            id nestedValue = [dictionary objectForKey:nestedKey];
             if (nestedValue) {
                 [mutableQueryStringComponents addObjectsFromArray:AFQueryStringPairsFromKeyAndValue((key ? [NSString stringWithFormat:@"%@[%@]", key, nestedKey] : nestedKey), nestedValue)];
             }
@@ -234,9 +235,14 @@ NSArray * AFQueryStringPairsFromKeyAndValue(NSString *key, id value) {
 	self.defaultHeaders = [NSMutableDictionary dictionary];
 
     // Accept-Language HTTP Header; see http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.4
-    NSString *preferredLanguageCodes = [[NSLocale preferredLanguages] componentsJoinedByString:@", "];
-    [self setDefaultHeader:@"Accept-Language" value:[NSString stringWithFormat:@"%@, en-us;q=0.8", preferredLanguageCodes]];
-
+    NSMutableArray *acceptLanguagesComponents = [NSMutableArray array];
+    [[NSLocale preferredLanguages] enumerateObjectsUsingBlock:^(id obj, NSUInteger idx, BOOL *stop) {
+        float q = 1.0f - (idx * 0.1f);
+        [acceptLanguagesComponents addObject:[NSString stringWithFormat:@"%@;q=%0.1g", obj, q]];
+        *stop = q <= 0.5f;
+    }];
+    [self setDefaultHeader:@"Accept-Language" value:[acceptLanguagesComponents componentsJoinedByString:@", "]];
+    
 #if defined(__IPHONE_OS_VERSION_MIN_REQUIRED)
     // User-Agent Header; see http://www.w3.org/Protocols/rfc2616/rfc2616-sec14.html#sec14.43
     [self setDefaultHeader:@"User-Agent" value:[NSString stringWithFormat:@"%@/%@ (%@; iOS %@; Scale/%0.2f)", [[[NSBundle mainBundle] infoDictionary] objectForKey:(NSString *)kCFBundleExecutableKey] ?: [[[NSBundle mainBundle] infoDictionary] objectForKey:(NSString *)kCFBundleIdentifierKey], (__bridge id)CFBundleGetValueForInfoDictionaryKey(CFBundleGetMainBundle(), kCFBundleVersionKey) ?: [[[NSBundle mainBundle] infoDictionary] objectForKey:(NSString *)kCFBundleVersionKey], [[UIDevice currentDevice] model], [[UIDevice currentDevice] systemVersion], ([[UIScreen mainScreen] respondsToSelector:@selector(scale)] ? [[UIScreen mainScreen] scale] : 1.0f)]];
@@ -304,7 +310,8 @@ static void AFNetworkReachabilityCallback(SCNetworkReachabilityRef __unused targ
     }
 
     dispatch_async(dispatch_get_main_queue(), ^{
-        [[NSNotificationCenter defaultCenter] postNotificationName:AFNetworkingReachabilityDidChangeNotification object:nil userInfo:[NSDictionary dictionaryWithObject:[NSNumber numberWithInteger:status] forKey:AFNetworkingReachabilityNotificationStatusItem]];
+        NSNotificationCenter *notificationCenter = [NSNotificationCenter defaultCenter];
+        [notificationCenter postNotificationName:AFNetworkingReachabilityDidChangeNotification object:nil userInfo:[NSDictionary dictionaryWithObject:[NSNumber numberWithInteger:status] forKey:AFNetworkingReachabilityNotificationStatusItem]];
     });
 }
 
@@ -581,9 +588,10 @@ static void AFNetworkReachabilityReleaseCallback(const void *info) {
 
     for (AFHTTPRequestOperation *operation in operations) {
         AFCompletionBlock originalCompletionBlock = [operation.completionBlock copy];
-		__weak AFHTTPRequestOperation *weakOperation = operation;
+        __weak __typeof(&*operation)weakOperation = operation;
         operation.completionBlock = ^{
-            dispatch_queue_t queue = weakOperation.successCallbackQueue ?: dispatch_get_main_queue();
+            __strong __typeof(&*weakOperation)strongOperation = weakOperation;
+            dispatch_queue_t queue = strongOperation.successCallbackQueue ?: dispatch_get_main_queue();
             dispatch_group_async(dispatchGroup, queue, ^{
                 if (originalCompletionBlock) {
                     originalCompletionBlock();
@@ -1157,6 +1165,8 @@ typedef enum {
         return YES;
     }
 
+#pragma clang diagnostic push
+#pragma clang diagnostic ignored "-Wcovered-switch-default"
     switch (self.inputStream.streamStatus) {
         case NSStreamStatusNotOpen:
         case NSStreamStatusOpening:
@@ -1170,6 +1180,8 @@ typedef enum {
         default:
             return NO;
     }
+#pragma clang diagnostic pop
+
 }
 
 - (NSInteger)read:(uint8_t *)buffer
