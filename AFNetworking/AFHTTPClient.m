@@ -160,6 +160,11 @@ NSArray * AFQueryStringPairsFromKeyAndValue(NSString *key, id value) {
         [array enumerateObjectsUsingBlock:^(id nestedValue, __unused NSUInteger idx, __unused BOOL *stop) {
             [mutableQueryStringComponents addObjectsFromArray:AFQueryStringPairsFromKeyAndValue([NSString stringWithFormat:@"%@[]", key], nestedValue)];
         }];
+    } else if ([value isKindOfClass:[NSSet class]]) {
+        NSSet *set = value;
+        [set enumerateObjectsUsingBlock:^(id obj, BOOL *stop) {
+            [mutableQueryStringComponents addObjectsFromArray:AFQueryStringPairsFromKeyAndValue(key, obj)];
+        }];
     } else {
         [mutableQueryStringComponents addObject:[[AFQueryStringPair alloc] initWithField:key value:value]];
     }
@@ -541,7 +546,7 @@ static void AFNetworkReachabilityReleaseCallback(const void *info) {
 - (void)cancelAllHTTPOperationsWithMethod:(NSString *)method
                                      path:(NSString *)path
 {
-    NSString *URLStringToMatched = [[[self requestWithMethod:(method ?: @"GET") path:path parameters:nil] URL] absoluteString];
+    NSString *pathToBeMatched = [[[self requestWithMethod:(method ?: @"GET") path:path parameters:nil] URL] path];
 
     for (NSOperation *operation in [self.operationQueue operations]) {
         if (![operation isKindOfClass:[AFHTTPRequestOperation class]]) {
@@ -549,9 +554,9 @@ static void AFNetworkReachabilityReleaseCallback(const void *info) {
         }
 
         BOOL hasMatchingMethod = !method || [method isEqualToString:[[(AFHTTPRequestOperation *)operation request] HTTPMethod]];
-        BOOL hasMatchingURL = [[[[(AFHTTPRequestOperation *)operation request] URL] absoluteString] isEqualToString:URLStringToMatched];
+        BOOL hasMatchingPath = [[[[(AFHTTPRequestOperation *)operation request] URL] path] isEqual:pathToBeMatched];
 
-        if (hasMatchingMethod && hasMatchingURL) {
+        if (hasMatchingMethod && hasMatchingPath) {
             [operation cancel];
         }
     }
@@ -737,7 +742,12 @@ static inline NSString * AFMultipartFormFinalBoundary() {
 static inline NSString * AFContentTypeForPathExtension(NSString *extension) {
 #ifdef __UTTYPE__
     NSString *UTI = (__bridge_transfer NSString *)UTTypeCreatePreferredIdentifierForTag(kUTTagClassFilenameExtension, (__bridge CFStringRef)extension, NULL);
-    return (__bridge_transfer NSString *)UTTypeCopyPreferredTagWithClass((__bridge CFStringRef)UTI, kUTTagClassMIMEType);
+    NSString *contentType = (__bridge_transfer NSString *)UTTypeCopyPreferredTagWithClass((__bridge CFStringRef)UTI, kUTTagClassMIMEType);
+    if (!contentType) {
+        return @"application/octet-stream";
+    } else {
+        return contentType;
+    }
 #else
     return @"application/octet-stream";
 #endif
@@ -1160,7 +1170,7 @@ typedef enum {
 }
 
 - (BOOL)hasBytesAvailable {
-    // Allows `read:maxLength:` to be called again if `AFMultipartFormFinalBoundary` doesn't fit into the avaiable buffer
+    // Allows `read:maxLength:` to be called again if `AFMultipartFormFinalBoundary` doesn't fit into the available buffer
     if (_phase == AFFinalBoundaryPhase) {
         return YES;
     }
